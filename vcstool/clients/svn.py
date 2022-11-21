@@ -63,6 +63,9 @@ class SvnClient(VcsClientBase):
             'returncode': 0,
         }
 
+    def compare(self, command):
+        return self.path
+
     def custom(self, command):
         self._check_executable()
         cmd = [SvnClient._executable] + command.args

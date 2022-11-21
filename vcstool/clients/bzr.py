@@ -27,6 +27,15 @@ class BzrClient(VcsClientBase):
         self._check_executable()
         return self._get_parent_branch()
 
+    def compare(self, command):
+        return {
+            'cmd': '',
+            'cwd': self.path,
+            'output': 'test',
+            'returncode': 0
+        }
+        return self.path
+
     def custom(self, command):
         self._check_executable()
         cmd = [BzrClient._executable] + command.args

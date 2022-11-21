@@ -28,6 +28,9 @@ class HgClient(VcsClientBase):
         self._check_color(cmd)
         return self._run_command(cmd)
 
+    def compare(self, command):
+        return self.path
+
     def custom(self, command):
         self._check_executable()
         cmd = [HgClient._executable] + command.args

@@ -33,18 +33,39 @@ class GitClient(VcsClientBase):
     def __init__(self, path):
         super(GitClient, self).__init__(path)
 
-    def branch(self, command):
+    def _branch(self, all):
         self._check_executable()
         cmd = [GitClient._executable, 'branch']
         result = self._run_command(cmd)
 
-        if not command.all and not result['returncode']:
+        if not all and not result['returncode']:
             # only show current branch
             lines = result['output'].splitlines()
             lines = [line[2:] for line in lines if line.startswith('* ')]
             result['output'] = '\n'.join(lines)
 
         return result
+
+    def branch(self, command):
+        return self._branch(command.all)
+
+    def compare(self, command):
+
+        # Get the branches
+        branch_result = self._branch(False)
+
+        # status_result = self_.status()
+
+        # print(branch_result)
+
+        return {
+            'cmd': '',
+            'cwd': self.path,
+            'output': 'test',
+            'output': f'{{branch: {branch_result["output"]}}}',
+            # 'output': f'{branch_result.output}',
+            'returncode': 0
+        }
 
     def custom(self, command):
         self._check_executable()
