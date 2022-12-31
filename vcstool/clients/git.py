@@ -3,9 +3,15 @@ from shutil import which
 import subprocess
 
 from vcstool.executor import USE_COLOR
+from vcstool.outputs import CompareOutput
 
 from .vcs_base import VcsClientBase
 from ..util import rmtree
+
+
+class GitCustomCommand:
+    def __init__(self, args):
+        self.args = args
 
 
 class GitClient(VcsClientBase):
@@ -49,21 +55,86 @@ class GitClient(VcsClientBase):
     def branch(self, command):
         return self._branch(command.all)
 
+    def _unstaged_changes(self):
+        result = self.custom(GitCustomCommand(['diff', '--no-ext-diff', '--quiet']))
+        return result['returncode'] == 1
+
+    def _staged_changes(self):
+        result = self.custom(GitCustomCommand(['diff', '--no-ext-diff', '--cached', '--quiet']))
+        return result['returncode'] == 1
+
+    def _untracked_files(self):
+        result = self.custom(GitCustomCommand(['ls-files', '--others', '--exclude-standard']))
+        return result['output'] != ''
+
+    def _stashes(self):
+        result = self.custom(GitCustomCommand(['rev-parse', '--verify', '--quiet', 'refs/stash']))
+        return result['returncode'] == 0
+
+    def _get_ahead_behind(self, local_branch, remote, remote_branch):
+        """Returns an (int, int) tuple corresponding to the (ahead, behind) commit numbers."""
+        if not remote or not remote_branch:
+            return (0, 0)
+        result = self.custom(GitCustomCommand(['rev-list', '--left-right', '--count',
+                                               f'{local_branch}...{remote}/{remote_branch}']))
+        # If the command failed, just return an error sentinel.
+        if result['returncode']:
+            return (None, None)
+        # Parse out the ints and return as a tuple
+        return (int(i) for i in result['output'].strip().split())
+
+    def _get_remote(self, local_branch: str):
+        result =  self.custom(GitCustomCommand(['config', f'branch.{local_branch}.remote']))
+        return result['output'] if result['returncode'] == 0 else ''
+
+    def _get_remote_version(self, local_branch: str):
+        result =  self.custom(GitCustomCommand(['config', f'branch.{local_branch}.merge']))
+        remote_version = result['output'] if result['returncode'] == 0 else ''
+        REMOVE_PREFIX = 'refs/heads/'
+        if remote_version.startswith(REMOVE_PREFIX):
+            remote_version = remote_version[len(REMOVE_PREFIX):]
+        return remote_version
+
+    def _get_tag(self, local_version : str):
+        result =  self.custom(GitCustomCommand(['describe', '--tags', '--abbrev=0', '--exact-match',
+                                                local_version]))
+        return result['output'].strip() if result['returncode'] == 0 else ''
+
+    def _get_hash(self, branch: str, remote: str = ""):
+        if branch == "":
+            return ""
+        if remote != "":
+            branch = f"{remote}/{branch}"
+        result = self.custom(GitCustomCommand(['rev-parse', branch]))
+        return result['output'].strip() if result['returncode'] == 0 else ''
+
     def compare(self, command):
-
-        # Get the branches
-        branch_result = self._branch(False)
-
-        # status_result = self_.status()
-
-        # print(branch_result)
+        result = self._branch(False)
+        # If we can't get the local version, no point in continuing.
+        if result['returncode']:
+            return result
+        local_version = result['output']
+        remote = self._get_remote(local_version)
+        remote_version = self._get_remote_version(local_version)
+        ahead, behind = self._get_ahead_behind(local_version, remote, remote_version)
 
         return {
-            'cmd': '',
+            'cmd': 'compare',
             'cwd': self.path,
-            'output': 'test',
-            'output': f'{{branch: {branch_result["output"]}}}',
-            # 'output': f'{branch_result.output}',
+            'output': CompareOutput(
+                local_version=local_version,
+                remote_version=remote_version,
+                tag=self._get_tag(local_version),
+                local_hash=self._get_hash(local_version),
+                remote_hash=self._get_hash(remote_version, remote),
+                remote=remote,
+                ahead=ahead,
+                behind=behind,
+                unstaged_changes=self._unstaged_changes(),
+                staged_changes=self._staged_changes(),
+                untracked_files=self._untracked_files(),
+                stashes=self._stashes(),
+            ),
             'returncode': 0
         }
 
